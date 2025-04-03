@@ -1,0 +1,7 @@
+env: "local"
+kafka:
+  consumer:
+    bootstrap.servers: "kafka:9092"
+    group.id: "book-store-api"
+    enable.auto.commit: true
+    timeout.read.message: 5s

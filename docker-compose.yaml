@@ -1,0 +1,111 @@
+services:
+  zookeeper:
+    image: zookeeper:3.8.0
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOO_CLIENT_PORT: 2181
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=local
+      - KAFKA_CLUSTERS_0_BOOTSTRAP_SERVERS=kafka:9092  # Используем внутренний адрес
+      - KAFKA_CLUSTERS_0_ZOOKEEPER=zookeeper:2181
+    depends_on:
+      - kafka
+
+  kafka:
+    image: wurstmeister/kafka:latest
+    container_name: bookStore_kafka
+    ports:
+      - "9092:9092"  # Для внутренних клиентов
+      - "9094:9094"  # Для внешних клиентов
+    environment:
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: INTERNAL://:9092,OUTSIDE://:9094
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,OUTSIDE://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,OUTSIDE:PLAINTEXT
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_BROKER_ID: 1
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+    depends_on:
+      - zookeeper
+    volumes:
+      - ./kafka_data:/kafka
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server kafka:9092 --list || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+
+  postgres:
+    restart: "always"
+    image: "postgres:latest"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: root
+      POSTGRES_DB: books
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5434:5432"
+    volumes:
+      - ./pg:/var/lib/postgresql/data/pgdata
+
+  book_service:
+    container_name: book-service
+    platform: linux/amd64
+    build:
+      context: ./bookService
+      dockerfile: Dockerfile
+      args:
+        - postgres=plan
+    environment:
+      configPath: ./config/local.yaml
+    ports:
+      - "44044:44044"
+    depends_on:
+      - postgres
+    command: ["./wait-for-it.sh", "postgres:5432", "--timeout=10", "--", "/app/book-service"]
+
+  api_gateway:
+    container_name: bookStore.apiGateway
+    platform: linux/amd64
+    build:
+      context: ./apiGateway
+      dockerfile: Dockerfile
+      args:
+        - postgres=plan
+    ports:
+      - "8083:8083"
+    environment:
+      HTTP_ADDR: ":8083"
+
+
+  kafka_service:
+    container_name: bookStore.kafkaService
+    platform: linux/amd64
+    build:
+      context: ./kafkaService
+      dockerfile: Dockerfile
+      args:
+        - postgres=plan
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+    ports:
+      - "9098:9098"
+    depends_on:
+       kafka:
+        condition: service_healthy
+    volumes:
+      - ./kafkaService/config:/app/config
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z kafka 9092 || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+
