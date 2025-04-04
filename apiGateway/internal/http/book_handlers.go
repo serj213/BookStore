@@ -46,9 +46,16 @@ func (h HTTPServer) Create(w http.ResponseWriter, r *http.Request) {
 	}, w)
 }
 
+// @Summary Получить список книг
+// @Description Получить все книги из системы
+// @Tags books
+// @Accept json
+// @Produce json
+// @Success 200 {object} GetBooksResponseOk "Успешный ответ"
+// @Router /books [get]
 func (h HTTPServer) GetBooks(w http.ResponseWriter, r *http.Request) {
 
-	books, err := h.BookService.GetBooks(r.Context())
+	books, err := h.BookService.GetBooks(r.Context())	
 	if err != nil {
 		ErrResponse("internal", w, r, http.StatusInternalServerError)
 		return
@@ -80,6 +87,13 @@ func (h HTTPServer) GetBooks(w http.ResponseWriter, r *http.Request) {
 
 }
 
+// @Summary Обновить книгу
+// @Description обновить данные о книге
+// @Tags books
+// @Accept json
+// @Produce json
+// @Success 200 {object} BookResponse "Успешный ответ"
+// @Router /book/update [put]
 func (h HTTPServer) UpdateBook(w http.ResponseWriter, r *http.Request) {
 	var req BookRequest
 
@@ -115,6 +129,13 @@ func (h HTTPServer) UpdateBook(w http.ResponseWriter, r *http.Request) {
 	ResponseOk(respData, w)
 }
 
+// @Summary Получить книгу
+// @Tags books
+// @Param id path int true "ID книги"
+// @Accept json
+// @Produce json
+// @Success 200 {object} ResponseOkBody "Успешный ответ"
+// @Router /book/{id} [get]
 func (s HTTPServer) GetBook(w http.ResponseWriter, r *http.Request) {
 
 	vars := mux.Vars(r)
@@ -145,6 +166,13 @@ func (s HTTPServer) GetBook(w http.ResponseWriter, r *http.Request) {
 	ResponseOk(data, w)
 }
 
+// @Summary Удалить книгу
+// @Tags books
+// @Param id path int true "ID книги"
+// @Accept json
+// @Produce json
+// @Success 200 {object} ResponseOkBody "Успешный ответ"
+// @Router /book/delete/{id} [delete]
 func (s HTTPServer) DeleteBook(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
