@@ -10,6 +10,7 @@ import (
 	_ "github.com/serj213/bookServiceApi/docs"
 	"github.com/serj213/bookServiceApi/internal/config"
 	HTTPServer "github.com/serj213/bookServiceApi/internal/http"
+	"github.com/serj213/bookServiceApi/internal/kafka"
 	"github.com/serj213/bookServiceApi/internal/services"
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 	"go.uber.org/zap"
@@ -55,11 +56,16 @@ func main(){
 
 	defer conn.Close()
 
+	kaf, err := kafka.NewKafkaProducer(*logSugar, cfg.BootstapServer)
+	if err != nil {
+		panic(err)
+	}
+
 	bookClient := bsv1.NewBookClient(conn)
 
 	bookService := services.New(logSugar, bookClient)
 
-	httpServer := HTTPServer.New(logSugar, bookService)
+	httpServer := HTTPServer.New(logSugar, bookService, kaf)
 
 	router := mux.NewRouter()
 

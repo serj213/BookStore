@@ -22,8 +22,10 @@ WORKDIR /app
 
 COPY --from=builder /app/api-gateway .
 COPY --from=builder /app/config/ ./config
+COPY --from=builder /app/cmd/wait-for-it.sh .
 
 RUN chmod +x /app/api-gateway
+RUN chmod +x wait-for-it.sh
 
 EXPOSE 8083
 CMD ["/app/api-gateway"] 

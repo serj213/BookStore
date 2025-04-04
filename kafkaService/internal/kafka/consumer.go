@@ -1,8 +1,8 @@
 package kafka
 
 import (
+	"context"
 	"fmt"
-	"time"
 
 	kaf "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/serj213/kafka-service/internal/file"
@@ -45,38 +45,47 @@ func (c KafkaConsumer) Subscribe(topics []string) error{
 }
 
 
-func (c KafkaConsumer) ReadMessages(timeout time.Duration) error{
+func (c KafkaConsumer) ReadMessages(ctx context.Context) error{
 
 	log := c.Log.With(zap.String("struct", "KafkaConsumer"), zap.String("method", "ReadMessages"))
+	writeChan := make(chan *kaf.Message, 100)
+
+	defer close(writeChan)
+	
+	go func ()  {
+		for msg := range writeChan{
+			err := c.fileWriter.Write(msg)
+			if err != nil {
+				log.Error("failed write file: %v", err)
+			}
+		}	
+	}()
 
 	for {
-		msg, err := c.C.ReadMessage(timeout)
-		if err != nil {
-			return fmt.Errorf("failed kafka readMessage: %v", err)
-		}
-
-		log.Debug(
-			zap.String("msg-id", string(msg.Key)),
-			zap.String("topic", *msg.TopicPartition.Topic),
-			zap.Time("timestamp", msg.Timestamp),
-		)
-
-
-		writeChan := make(chan *kaf.Message, 100)
-
-		defer func() {
-			close(writeChan)
-		}()
-
-		go func ()  {
-			for msg := range writeChan{
-				err := c.fileWriter.Write(msg)
-				if err != nil {
-					log.Error("failed write file: %v", err)
+		select{
+		case <- ctx.Done():
+			log.Info("cancel kafka consumer")
+			return nil
+		default:
+			msg, err := c.C.ReadMessage(-1)
+			if err != nil {
+				if kafkaErr, ok := err.(kaf.Error); ok && kafkaErr.Code() == kaf.ErrTimedOut {
+					continue
 				}
-			}	
-		}()
+				return fmt.Errorf("failed kafka readMessage: %v", err)
+			}
 
-		writeChan <- msg
+			log.Debug(
+				zap.String("msg-id", string(msg.Key)),
+				zap.String("topic", *msg.TopicPartition.Topic),
+				zap.Time("timestamp", msg.Timestamp),
+			)
+
+			select {
+            case writeChan <- msg:
+            case <-ctx.Done():
+                return nil
+            }
+		}	
 	}
 }

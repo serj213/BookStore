@@ -5,9 +5,11 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/serj213/bookServiceApi/internal/domain"
+	"github.com/serj213/bookServiceApi/internal/kafka"
 	"github.com/serj213/bookServiceApi/internal/lib"
 )
 
@@ -83,8 +85,14 @@ func (h HTTPServer) GetBooks(w http.ResponseWriter, r *http.Request) {
 		Books:  resBooks,
 	}
 
-	ResponseOk(resOk, w)
+	msgKafka := kafka.KafkaMsg{
+		RequestTime: time.Now(),
+		Method: http.MethodGet,
+	}
 
+	h.Kafka.SendMessage("books", msgKafka)
+
+	ResponseOk(resOk, w)
 }
 
 // @Summary Обновить книгу

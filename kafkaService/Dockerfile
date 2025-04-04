@@ -27,10 +27,12 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 COPY --from=builder /app/kafka-service .
-COPY --from=builder /app/config/local.yaml ./
+COPY --from=builder /app/config/ ./config
+COPY --from=builder /app/cmd/wait-for-it.sh .
 
 RUN apt-get update && apt-get install -y librdkafka1 && rm -rf /var/lib/apt/lists/*
 
 RUN chmod +x /app/kafka-service
-EXPOSE 9098
+RUN chmod +x wait-for-it.sh
+
 CMD ["/app/kafka-service"] 

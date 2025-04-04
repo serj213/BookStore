@@ -13,6 +13,7 @@ type Config struct {
 	Env string `yaml:"env" env-required:"true"`
 	GRPC GRPC `yaml:"grpc" env-required:"true"`
 	HTTP HTTP `yaml:"http" env-required:"true"`
+	BootstapServer string `yaml:"bootstap-server"`
 }
 
 type GRPC struct {

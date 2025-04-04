@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 
@@ -15,8 +16,8 @@ const (
 	prod = "prod"
 )
 
-
 func main() {
+	ctx, _ := context.WithCancel(context.Background())
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatal(err)
@@ -44,7 +45,12 @@ func main() {
 		return
 	}
 	log.Debug("previus read message")
-	kafkaCon.ReadMessages(cfg.Kafka.Consumer.TimeoutReadMessage)
+	go func(){
+		err := kafkaCon.ReadMessages(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}()
 }
 
 func initLogger(env string) (*zap.SugaredLogger, error) {

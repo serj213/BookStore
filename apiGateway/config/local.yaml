@@ -4,3 +4,4 @@ grpc:
   timeout: 10h
 http:
   addr: "localhost:8083"
+bootstap-server: "kafka:9092"
