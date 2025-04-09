@@ -4,8 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"syscall"
 
 	"github.com/serj213/kafka-service/internal/config"
+	"github.com/serj213/kafka-service/internal/file"
 	"github.com/serj213/kafka-service/internal/kafka"
 	"go.uber.org/zap"
 )
@@ -17,7 +22,7 @@ const (
 )
 
 func main() {
-	ctx, _ := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatal(err)
@@ -31,26 +36,39 @@ func main() {
 	}
 
 	log.Info("logger enabled")
-	kafkaCon, err := kafka.NewConsumer(*log,cfg.Kafka.Consumer.BootstapServers, cfg.Kafka.Consumer.GroupId)
+
+	file, err := file.NewFile(filepath.Join("../", "logs.txt"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	kafkaCon, err := kafka.NewConsumer(*log,cfg.Kafka.Consumer.BootstapServers, cfg.Kafka.Consumer.GroupId, file)
 	if err != nil {
 		log.Fatal(err)
 		return
 	}
-	
-	defer kafkaCon.C.Close()
 
-	err = kafkaCon.Subscribe([]string{"newOrder"})
+	err = kafkaCon.Subscribe([]string{"books"})
 	if err != nil {
 		log.Fatal(err)
 		return
 	}
 	log.Debug("previus read message")
+
+	err = kafkaCon.ReadMessages(ctx)
+
+
+	stopped := make(chan struct{})
 	go func(){
-		err := kafkaCon.ReadMessages(ctx)
-		if err != nil {
-			log.Fatal(err)
-		}
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+		<-sigChan
+		defer cancel()
+		kafkaCon.C.Close()
+		close(stopped)
 	}()
+
+	
 }
 
 func initLogger(env string) (*zap.SugaredLogger, error) {

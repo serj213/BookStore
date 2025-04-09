@@ -3,6 +3,8 @@ package kafka
 import (
 	"context"
 	"fmt"
+	"sync"
+	"time"
 
 	kaf "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/serj213/kafka-service/internal/file"
@@ -13,11 +15,11 @@ import (
 type KafkaConsumer struct {
 	Log zap.SugaredLogger
 	C *kaf.Consumer
-	fileWriter file.FileWriter
+	fileWriter *file.FileWriter
 }
 
 
-func NewConsumer(log zap.SugaredLogger,boostrapService, groupId string) (KafkaConsumer, error){
+func NewConsumer(log zap.SugaredLogger,boostrapService, groupId string, file *file.FileWriter) (KafkaConsumer, error){
 	c, err := kaf.NewConsumer(&kaf.ConfigMap{
 		"bootstrap.servers": boostrapService,
 		"group.id": groupId,
@@ -26,9 +28,11 @@ func NewConsumer(log zap.SugaredLogger,boostrapService, groupId string) (KafkaCo
 		return KafkaConsumer{}, err
 	}
 
+
 	return KafkaConsumer{
 		C: c,
 		Log: log,
+		fileWriter: file,
 	}, nil
 }
 
@@ -47,45 +51,69 @@ func (c KafkaConsumer) Subscribe(topics []string) error{
 
 func (c KafkaConsumer) ReadMessages(ctx context.Context) error{
 
-	log := c.Log.With(zap.String("struct", "KafkaConsumer"), zap.String("method", "ReadMessages"))
-	writeChan := make(chan *kaf.Message, 100)
+	writeChan := make(chan *kaf.Message, 500)
+	errChan := make(chan error, 1)
 
-	defer close(writeChan)
-	
-	go func ()  {
-		for msg := range writeChan{
-			err := c.fileWriter.Write(msg)
-			if err != nil {
-				log.Error("failed write file: %v", err)
+	fmt.Println("ReadMessages start")
+
+	var wg sync.WaitGroup
+
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func(){
+			defer wg.Done()
+			for msg := range writeChan{
+				err := c.fileWriter.Write(msg)
+				if err != nil {
+					errChan <- err
+					return
+				}
 			}
-		}	
-	}()
+
+		}()
+	}
+
+	batch := make([]*kaf.Message, 0, 100)
+	flushBatch := func() error {
+		if len(batch) == 0{
+			return nil
+		}
+		select{
+		case writeChan <- batch[0]:
+			batch = batch[1:]
+			return nil
+		case <- ctx.Done():
+			return ctx.Err()
+		}
+	}
 
 	for {
+		
 		select{
-		case <- ctx.Done():
-			log.Info("cancel kafka consumer")
+		case <-ctx.Done():
+			wg.Wait()
 			return nil
+
 		default:
-			msg, err := c.C.ReadMessage(-1)
+			msg, err := c.C.ReadMessage(10 * time.Second)
 			if err != nil {
-				if kafkaErr, ok := err.(kaf.Error); ok && kafkaErr.Code() == kaf.ErrTimedOut {
-					continue
-				}
-				return fmt.Errorf("failed kafka readMessage: %v", err)
+				fmt.Println("лфалф укк, ", err)
+				if kafkaErr, ok := err.(kaf.Error); ok {
+                    if kafkaErr.Code() == kaf.ErrTimedOut {
+						if err := flushBatch(); err != nil {
+							return err
+						}
+                        continue
+                    }
+                    if kafkaErr.Code() == kaf.ErrAllBrokersDown {
+                        time.Sleep(1 * time.Second)
+                        continue
+                    }
+                }
+                return fmt.Errorf("kafka read error: %w", err)
 			}
-
-			log.Debug(
-				zap.String("msg-id", string(msg.Key)),
-				zap.String("topic", *msg.TopicPartition.Topic),
-				zap.Time("timestamp", msg.Timestamp),
-			)
-
-			select {
-            case writeChan <- msg:
-            case <-ctx.Done():
-                return nil
-            }
-		}	
-	}
+			fmt.Println("msg ", msg)
+			batch = append(batch, msg)
+		}
+	}	
 }

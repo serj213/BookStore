@@ -90,7 +90,7 @@ func (h HTTPServer) GetBooks(w http.ResponseWriter, r *http.Request) {
 		Method: http.MethodGet,
 	}
 
-	h.Kafka.SendMessage("books", msgKafka)
+	go h.Kafka.SendMessage("books", msgKafka)
 
 	ResponseOk(resOk, w)
 }
